@@ -5,11 +5,18 @@
 clc
 clear
 
-addpath('MB');
+
+addpath('/network/lustre/iss02/cenir/analyse/irm/users/benoit.beranger/SOUNDfMRI/MB');
 
 main_dir = '/network/lustre/iss02/cenir/analyse/irm/users/benoit.beranger/SOUNDfMRI/nifti';
 
-e = exam(main_dir, 'SOUND'); % all subjects with multi-echo
+e = exam(main_dir, 'SOUNDFMRI'); % all subjects with multi-echo
+
+
+%% Cluster ?
+
+CLUSTER = 0;
+
 
 
 %% Common
@@ -199,12 +206,64 @@ for r = 1 : length(run_list)
 end
 
 
+%% SUJET09_ACTIVE
+
+e_SUJET09_ACTIVE = e.getExam('2022_08_08_SOUNDFMRI_SUJET09_ACTIVE');
+
+% Func
+run_list = {
+    'Staircase1'
+    'Staircase2' % +++
+    'Block_0_A'
+    'Block_1_A'
+    'Block_2_A'
+    'Block_3_A'
+    'Block_4_A'
+    'Block_5_A'
+    'Block_6_A'
+    'Block_7_A'
+    'Block_8_A'
+    'Block_9_A'
+    };
+for r = 1 : length(run_list)
+    run_name = run_list{r};
+    e_SUJET09_ACTIVE.addSerie([run_name           '$'], ['run_' run_name], 1);
+    e_SUJET09_ACTIVE.addSerie([run_name '_PhysioLog$'], ['phy_' run_name], 1);
+end
+
+
+%% Sujet_29_PASSIVE /// INCOMPLET
+
+% e_Sujet_29_PASSIVE = e.getExam('2024_03_28_SOUNDFMRI_Sujet_29_PASSIVE');
+% 
+% % Func
+% run_list = {
+%     'Staircase'
+%     'Block_0_P'
+%     'Block_1_P'
+%     'Block_2_P'
+%     'Block_3_P'
+%     'Block_4_P'
+%     'Block_5_P'
+%     'Block_6_P'
+%     % 'Block_7_P'
+%     % 'Block_8_P'
+%     % 'Block_9_P' 
+%     % 'Block_10_P'
+%     };
+% for r = 1 : length(run_list)
+%     run_name = run_list{r};
+%     e_Sujet_29_PASSIVE.addSerie([run_name           '$'], ['run_' run_name], 1);
+%     e_Sujet_29_PASSIVE.addSerie([run_name '_PhysioLog$'], ['phy_' run_name], 1);
+% end
+
+
 %% exception
 
-exception_list = e_SUJET05_ACTIVE + e_SUJET05_PASSIVE;
+exception_list = e_SUJET05_ACTIVE + e_SUJET05_PASSIVE + e_SUJET09_ACTIVE;
 
 
-%% specific
+%% non-specific
 
 e_passive = e.getExam('PASSIVE');
 e_passive = e_passive - exception_list;
@@ -230,7 +289,6 @@ for r = 1 : length(run_list)
     e_passive.addSerie([run_name '_PhysioLog$'], ['phy_' run_name], 1);
 end
 
-
 e_active = e.getExam('ACTIVE');
 e_active = e_active - exception_list;
 
@@ -253,6 +311,7 @@ for r = 1 : length(run_list)
     e_active.addSerie([run_name '_PhysioLog$'], ['phy_' run_name], 1);
 end
 
+
 %% common
 
 e.getSerie('run').addVolume('^v_.*nii$',   'v', 3);
@@ -268,9 +327,16 @@ e.reorderSeries('name');
 % e.explore
 
 
-%% Cluster ?
+%% FILTER
 
-CLUSTER = 0;
+% SUJET23_PASSIVE : images are flipped, need to be manually correct them
+% e = e.getExam('SUJET23_PASSIVE');
+
+
+%% check if all echos have the same number of volumes
+% this step takes time the first time you run it, but after its neglectable
+
+e.getSerie('run').getVolume('v').removeEmpty().check_multiecho_Nvol()
 
 
 %% segment cat12 #CAT12->SPM12
@@ -289,23 +355,10 @@ end
 par.redo    = 0;
 par.display = 0;
 
-par.subfolder = 0;
-
 par.GM        = [1 0 1 0]; % warped_space_Unmodulated (wp1*)     / warped_space_modulated (mwp1*)     / native_space (p1*)     / native_space_dartel_import (rp1*)
 par.WM        = [1 0 1 0]; %                          (wp2*)     /                        (mwp2*)     /              (p2*)     /                            (rp2*)
 par.CSF       = [1 0 1 0]; %                          (wp3*)     /                        (mwp3*)     /              (p3*)     /                            (rp3*)
-par.TPMC      = [0 0 0 0]; %                          (wp[456]*) /                        (mwp[456]*) /              (p[456]*) /                            (rp[456]*)   This will create other probalities map (p4 p5 p6)
-
-par.label     = [1 1 0] ;  % native (p0*)  / normalize (wp0*)  / dartel (rp0*)       This will create a label map : p0 = (1 x p1) + (3 x p2) + (1 x p3)
-par.bias      = [1 1 0] ;  % native (ms*)  / normalize (wms*)  / dartel (rms*)       This will save the bias field corrected  + SANLM (global) T1
-par.las       = [0 0 0] ;  % native (mis*) / normalize (wmis*) / dartel (rmis*)       This will save the bias field corrected  + SANLM (local) T1
-
-par.warp      = [1 1];     % warp fields  : native->template (y_*) / native<-template (iy_*)
-
-par.doSurface = 0;
-par.jacobian  = 0;         % write jacobian determinant in normalize space
-par.doROI     = 0;         % will compute the volume in each atlas region
-
+par.TPMC      = [0 0 0 0]; %                          (wp[456]*) /                        (mwp[456]*) /              (p[456]*) /                            (rp[456]*)
 job_do_segmentCAT12(anat,par);
 
 
@@ -373,7 +426,6 @@ par.jobname = 'unzip_and_keep__bet';
 e.getSerie('run').getVolume(['^bet_Tmean_' afni_prefix 'e1$']).removeEmpty().unzip_and_keep(par);
 
 
-
 %% TEDANA #Python
 
 clear par
@@ -437,7 +489,6 @@ else
     par.sge = 0;
 end
 par.redo = 0;
-par.vox = [2.5 2.5 2.5]; % IMPORTANT keep original EPI voxel size
 img = e.getSerie('run').getVolume('^ts_OC').removeEmpty();
 y   = img.getExam.getSerie('anat_T1').getVolume('^y');
 par.jobname = 'spm_normalize_epi';
@@ -467,10 +518,12 @@ img = e.getSerie('run').getVolume('^wts_OC').removeEmpty();
 
 par.smooth   = [5 5 5];
 par.prefix   = 's5';
+par.jobname = 'spm_smooth_5mm';
 job_smooth(img,par);
 
 par.smooth   = [8 8 8];
 par.prefix   = 's8';
+par.jobname = 'spm_smooth_8mm';
 job_smooth(img,par);
 
 
@@ -519,10 +572,21 @@ e.getSerie('phy').getPhysio('dcm').extract()
 %% PhysIO nuisance regressor generation #matlab/TAPAS-PhysIO
 %% Prepare files
 
-info = e.getSerie('phy').removeEmpty().getPhysio('info');
-puls = e.getSerie('phy').removeEmpty().getPhysio('puls');
-resp = e.getSerie('phy').removeEmpty().getPhysio('resp');
-run  = e.getSerie('run').removeEmpty();
+% get physio files & check if some are missing
+info = e.getSerie('phy').removeEmpty().getPhysio('info');   info = info(:);   missing_info = cellfun( 'isempty', info(:).getPath() );
+puls = e.getSerie('phy').removeEmpty().getPhysio('puls');   puls = puls(:);   missing_puls = cellfun( 'isempty', puls(:).getPath() );
+resp = e.getSerie('phy').removeEmpty().getPhysio('resp');   resp = resp(:);   missing_resp = cellfun( 'isempty', resp(:).getPath() );
+
+run_all = e.getSerie('run').removeEmpty();
+
+idx_missing = missing_info | missing_puls | missing_resp;
+
+% idx_missing = logical(size(missing_info)); % !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+idx_ok      = ~idx_missing;
+
+run_phy_missing = run_all( idx_missing );
+run_phy_ok      = run_all( idx_ok );
 
 %--------------------------------------------------------------------------
 % in AFNI, outside the mask is NaN
@@ -533,27 +597,29 @@ clear par
 if CLUSTER
     par.run = 0;
     par.sge = 1;
-    par.sge_queu = 'normal,bigmem';
+    par.sge_queu = 'normal,bigmem'; 
 else
     par.run = 1;
     par.sge = 0;
 end
-job_afni_remove_nan( run.getVolume('^wts_OC'), par );
+job_afni_remove_nan( run_all.getVolume('^wts_OC'), par );
 %--------------------------------------------------------------------------
 
-if CLUSTER
-    run.addVolume('tedana','^nwts_OC','nwts_OC',1);
-end
-volume = run.getVolume('^nwts_OC');
+volume_phy_ok = run_phy_ok.getVolume('^nwts_OC');
+outdir_phy_ok = volume_phy_ok.getDir();
+rp_phy_ok     = run_phy_ok.getRP('rp_spm');
+mask_phy_ok   = run_phy_ok.getExam().getSerie('anat').getVolume('^rwp[23]');
+info_ok       = info( idx_ok );
+puls_ok       = puls( idx_ok );
+resp_ok       = resp( idx_ok );
 
-outdir = volume.getDir();
+volume_phy_missing = run_phy_missing.getVolume('^nwts_OC');
+outdir_phy_missing = volume_phy_missing.getDir();
+rp_phy_missing     = run_phy_missing.getRP('rp_spm');
+mask_phy_missing   = run_phy_missing.getExam().getSerie('anat').getVolume('^rwp[23]').squeeze();
 
-rp = run.getRP('rp_spm');
 
-mask = run.getExam.getSerie('anat').getVolume('^rwp[23]');
-
-
-%% Prepare job
+%% Prepare job : ok
 
 clear par
 %----------------------------------------------------------------------------------------------------------------------------------------------------
@@ -567,16 +633,16 @@ par.rp       = 1;
 par.TR     = 1.660;
 par.nSlice = 60;
 
-par.volume = volume;
-par.outdir = outdir;
+par.volume = volume_phy_ok;
+par.outdir = outdir_phy_ok;
 
 %----------------------------------------------------------------------------------------------------------------------------------------------------
 % Physio
 %----------------------------------------------------------------------------------------------------------------------------------------------------
 
-par.physio_Info = info;
-par.physio_PULS = puls;
-par.physio_RESP = resp;
+par.physio_Info = info_ok;
+par.physio_PULS = puls_ok;
+par.physio_RESP = resp_ok;
 
 par.physio_RETROICOR        = 1;
 par.physio_HRV              = 1;
@@ -593,8 +659,8 @@ par.physio_slice_to_realign    = 'middle';       % 'first' / 'middle' / 'last' /
 % noiseROI
 %----------------------------------------------------------------------------------------------------------------------------------------------------
 
-par.noiseROI_mask   = mask;
-par.noiseROI_volume = volume;
+par.noiseROI_mask   = mask_phy_ok;
+par.noiseROI_volume = volume_phy_ok;
 
 par.noiseROI_thresholds   = [0.95 0.70];     % keep voxels with tissu probabilty >= 95%
 par.noiseROI_n_voxel_crop = [2 1];           % crop n voxels in each direction, to avoid partial volume
@@ -605,7 +671,7 @@ par.noiseROI_n_components = 10;              % keep n PCA componenets
 % Realignment Parameters
 %----------------------------------------------------------------------------------------------------------------------------------------------------
 
-par.rp_file = rp;
+par.rp_file = rp_phy_ok;
 
 par.rp_order     = 24;   % can be 6, 12, 24
 % 6 = just add rp, 12 = also adds first order derivatives, 24 = also adds first + second order derivatives
@@ -622,7 +688,7 @@ par.print_figures = 0; % 0 , 1 , 2 , 3
 if CLUSTER
     par.run = 0;
     par.sge = 1;
-    par.sge_queu = 'normal,bigmem';
+    par.sge_queu = 'normal,bigmem'; 
 else
     par.run = 1;
     par.sge = 0;
@@ -631,7 +697,92 @@ par.display  = 0;
 par.redo     = 0;
 
 % cluster
-par.jobname  = 'spm_physio';
+par.jobname  = 'spm_physio_ok';
+par.walltime = '04:00:00';
+par.mem      = '4G';
+
+job_physio_tapas( par );
+
+
+%% Prepare job : missing
+
+clear par
+%----------------------------------------------------------------------------------------------------------------------------------------------------
+% ALWAYS MANDATORY
+%----------------------------------------------------------------------------------------------------------------------------------------------------
+
+par.physio   = 0; % !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+par.noiseROI = 1;
+par.rp       = 1;
+
+par.TR     = 1.660;
+par.nSlice = 60;
+
+par.volume = volume_phy_missing;
+par.outdir = outdir_phy_missing;
+
+%----------------------------------------------------------------------------------------------------------------------------------------------------
+% Physio
+%----------------------------------------------------------------------------------------------------------------------------------------------------
+
+par.physio_Info = [];
+par.physio_PULS = [];
+par.physio_RESP = [];
+
+par.physio_RETROICOR        = 0;
+par.physio_HRV              = 0;
+par.physio_RVT              = 0;
+par.physio_logfiles_vendor  = 'Siemens_Tics'; % Siemens CMRR multiband sequence, only this one is coded yet
+par.physio_logfiles_align_scan = 'last';         % 'last' / 'first'
+% Determines which scan shall be aligned to which part of the logfile.
+% Typically, aligning the last scan to the end of the logfile is beneficial, since start of logfile and scans might be shifted due to pre-scans;
+par.physio_slice_to_realign    = 'middle';       % 'first' / 'middle' / 'last' / sliceNumber (integer)
+% Slice to which regressors are temporally aligned. Typically the slice where your most important activation is expected.
+
+
+%----------------------------------------------------------------------------------------------------------------------------------------------------
+% noiseROI
+%----------------------------------------------------------------------------------------------------------------------------------------------------
+
+par.noiseROI_mask   = mask_phy_missing;
+par.noiseROI_volume = volume_phy_missing;
+
+par.noiseROI_thresholds   = [0.95 0.70];     % keep voxels with tissu probabilty >= 95%
+par.noiseROI_n_voxel_crop = [2 1];           % crop n voxels in each direction, to avoid partial volume
+par.noiseROI_n_components = 10;              % keep n PCA componenets
+
+
+%----------------------------------------------------------------------------------------------------------------------------------------------------
+% Realignment Parameters
+%----------------------------------------------------------------------------------------------------------------------------------------------------
+
+par.rp_file = rp_phy_missing;
+
+par.rp_order     = 24;   % can be 6, 12, 24
+% 6 = just add rp, 12 = also adds first order derivatives, 24 = also adds first + second order derivatives
+par.rp_method    = 'FD'; % 'MAXVAL' / 'FD' / 'DVARS'
+par.rp_threshold = +Inf;  % Threshold above which a stick regressor is created for corresponding volume of exceeding value
+
+
+%----------------------------------------------------------------------------------------------------------------------------------------------------
+% Other
+%----------------------------------------------------------------------------------------------------------------------------------------------------
+par.print_figures = 0; % 0 , 1 , 2 , 3
+
+% classic matvol
+if CLUSTER
+    par.run = 0;
+    par.sge = 1;
+    par.sge_queu = 'normal,bigmem'; 
+else
+    par.run = 1;
+    par.sge = 0;
+end
+par.display  = 0;
+par.redo     = 0;
+
+% cluster
+par.jobname  = 'spm_physio_missing';
 par.walltime = '04:00:00';
 par.mem      = '4G';
 
@@ -640,5 +791,5 @@ job_physio_tapas( par );
 
 %% save
 
-save e e
+save /network/lustre/iss02/cenir/analyse/irm/users/benoit.beranger/SOUNDfMRI/e.mat e
 
